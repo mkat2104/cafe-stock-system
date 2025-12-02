@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 );
 
 
-CREATE TABLE IF NOT EXIST sales (
+CREATE TABLE IF NOT EXISTS sales (
     id SERIAL PRIMARY KEY,
     sale_time TIMESTAMP DEFAULT NOW(),
     total_amount DECIMAL(10,2),
