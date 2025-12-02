@@ -52,11 +52,13 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 );
 
 
-CREATE TABLE IF NOT EXISTS sales (
+CREATE TABLE IF NOT EXIST sales (
     id SERIAL PRIMARY KEY,
     sale_time TIMESTAMP DEFAULT NOW(),
-    total_amount DECIMAL(10,2)
+    total_amount DECIMAL(10,2),
+    customer_id INT REFERENCES customers(id)
 );
+
 
 
 -- SALES ITEMS (Each menu item inside each bill)
