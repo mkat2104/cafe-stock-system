@@ -8,7 +8,7 @@ RETURNS INT AS $$
 DECLARE
     new_id INT;
 BEGIN
-    INSERT INTO customers(name, phone, email, password_hash)
+    INSERT INTO customers (name, phone, email, password_hash)
     VALUES (
         p_name,
         p_phone,
@@ -23,7 +23,7 @@ $$ LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION customer_login(
-    p_login TEXT,         -- phone or email
+    p_login TEXT,
     p_password TEXT
 )
 RETURNS INT AS $$
@@ -49,6 +49,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+
 CREATE OR REPLACE FUNCTION update_customer_profile(
     p_customer_id INT,
     p_name TEXT,
@@ -64,6 +65,7 @@ BEGIN
     WHERE id = p_customer_id;
 END;
 $$ LANGUAGE plpgsql;
+
 
 
 CREATE OR REPLACE FUNCTION customer_change_password(
@@ -83,7 +85,6 @@ BEGIN
         UPDATE customers
         SET password_hash = crypt(p_new_password, gen_salt('bf'))
         WHERE id = p_customer_id;
-
         RETURN TRUE;
     ELSE
         RETURN FALSE;
@@ -92,59 +93,118 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+
 CREATE OR REPLACE FUNCTION create_customer_order(
     _customer_id INT
-) RETURNS INT AS $$
+)
+RETURNS INT AS $$
 DECLARE
-    new_sale_id INT;
+    new_order_id INT;
 BEGIN
-    INSERT INTO sales (sale_time, total_amount, customer_id)
-    VALUES (NOW(), NULL, _customer_id)
-    RETURNING id INTO new_sale_id;
+    INSERT INTO customer_orders (customer_id, order_time, total_amount)
+    VALUES (_customer_id, NOW(), 0)
+    RETURNING id INTO new_order_id;
 
-    RETURN new_sale_id;
+    RETURN new_order_id;
 END;
 $$ LANGUAGE plpgsql;
+
 
 
 
 CREATE OR REPLACE FUNCTION add_item_to_order(
-    _sale_id INT,
-    _menu_id INT,
+    _order_id INT,
+    _menu_name TEXT,
     _quantity INT
-) RETURNS TEXT AS $$
+)
+RETURNS TEXT AS $$
 DECLARE
+    _menu_id INT;
     _price DECIMAL(10,2);
-    _current_stock INT;
+    _ingredient RECORD;
+    _new_total DECIMAL(10,2);
 BEGIN
-    -- 1. Check current stock
-    SELECT stock INTO _current_stock
+    -- 1. Find menu item by name (case-insensitive)
+    SELECT id, price INTO _menu_id, _price
     FROM menu_items
-    WHERE id = _menu_id;
+    WHERE LOWER(name) = LOWER(_menu_name)
+      AND is_available = TRUE;
 
-    IF _current_stock IS NULL THEN
-        RETURN 'Error: Menu item does not exist.';
+    IF NOT FOUND THEN
+        RETURN format('Error: Menu item "%s" not found or unavailable.', _menu_name);
     END IF;
 
-    IF _current_stock < _quantity THEN
-        RETURN 'Error: Not enough stock available.';
-    END IF;
+    -- 2. Insert order item
+    INSERT INTO customer_order_items (order_id, menu_id, quantity, price_each)
+    VALUES (_order_id, _menu_id, _quantity, _price);
 
-    -- 2. Get the price of the item
-    SELECT price INTO _price
-    FROM menu_items
-    WHERE id = _menu_id;
+    -- 3. Reduce ingredient stock based on recipe
+    FOR _ingredient IN
+        SELECT ingredient_id, quantity_needed
+        FROM menu_ingredients
+        WHERE menu_id = _menu_id
+    LOOP
+        UPDATE ingredients
+        SET current_stock = current_stock - (_ingredient.quantity_needed * _quantity)
+        WHERE id = _ingredient.ingredient_id;
 
-    -- 3. Insert into sales_items
-    INSERT INTO sales_items (sale_id, menu_id, quantity, price_each)
-    VALUES (_sale_id, _menu_id, _quantity, _price);
+        INSERT INTO stock_movements (ingredient_id, change_amount, movement_type)
+        VALUES (_ingredient.ingredient_id, -(_ingredient.quantity_needed * _quantity), 'sale_usage');
+    END LOOP;
 
-    -- 4. Reduce the stock
-    UPDATE menu_items
-    SET stock = stock - _quantity
-    WHERE id = _menu_id;
+    -- 4. Update order total automatically
+    SELECT SUM(quantity * price_each)
+    INTO _new_total
+    FROM customer_order_items
+    WHERE order_id = _order_id;
 
-    RETURN 'Item added to order and stock updated.';
+    UPDATE customer_orders
+    SET total_amount = _new_total
+    WHERE id = _order_id;
+
+    -- 5. Return confirmation message
+    RETURN format(
+        'Added %s x%s to order #%s. Total updated to %s ฿.',
+        _menu_name, _quantity, _order_id, to_char(_new_total, 'FM999999.00')
+    );
 END;
 $$ LANGUAGE plpgsql;
+
+
+
+
+CREATE OR REPLACE FUNCTION calculate_order_total(
+    _order_id INT
+)
+RETURNS DECIMAL AS $$
+DECLARE
+    total DECIMAL(10,2);
+BEGIN
+    SELECT SUM(quantity * price_each)
+    INTO total
+    FROM customer_order_items
+    WHERE order_id = _order_id;
+
+    UPDATE customer_orders
+    SET total_amount = total
+    WHERE id = _order_id;
+
+    RETURN total;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION complete_customer_order(
+    _order_id INT
+)
+RETURNS DECIMAL AS $$
+DECLARE
+    final_total DECIMAL(10,2);
+BEGIN
+    final_total := calculate_order_total(_order_id);
+    RETURN final_total;
+END;
+$$ LANGUAGE plpgsql;
+
+
 

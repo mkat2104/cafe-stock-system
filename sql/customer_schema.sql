@@ -26,3 +26,6 @@ CREATE TABLE IF NOT EXISTS customer_order_items (
     quantity INT NOT NULL,
     price_each DECIMAL(10,2) NOT NULL
 );
+
+
+
