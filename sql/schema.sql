@@ -50,22 +50,3 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     movement_type VARCHAR(20) NOT NULL,     -- restock / sale_usage / waste
     created_at TIMESTAMP DEFAULT NOW()
 );
-
-
-CREATE TABLE IF NOT EXISTS sales (
-    id SERIAL PRIMARY KEY,
-    sale_time TIMESTAMP DEFAULT NOW(),
-    total_amount DECIMAL(10,2),
-    customer_id INT REFERENCES customers(id)
-);
-
-
-
--- SALES ITEMS (Each menu item inside each bill)
-CREATE TABLE IF NOT EXISTS sales_items (
-    id SERIAL PRIMARY KEY,
-    sale_id INT REFERENCES sales(id) ON DELETE CASCADE,
-    menu_id INT REFERENCES menu_items(id) ON DELETE CASCADE,
-    quantity INT NOT NULL,
-    price_each DECIMAL(10,2) NOT NULL
-);

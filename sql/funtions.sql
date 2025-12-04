@@ -66,3 +66,33 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+
+CREATE OR REPLACE FUNCTION get_customer_orders_summary()
+    RETURNS TABLE(
+                     order_id INT,
+                     customer_name TEXT,
+                     order_time TIMESTAMP,
+                     items_summary TEXT,
+                     order_total DECIMAL(10,2)
+                 )
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT
+            co.id AS order_id,
+            c.name::TEXT AS customer_name,
+            co.order_time,
+            STRING_AGG(
+                    format('%s x%s', mi.name, coi.quantity),  -- use %s instead of %d
+                    ', '
+                    ORDER BY mi.name
+            ) AS items_summary,
+            co.total_amount AS order_total
+        FROM customer_orders co
+                 JOIN customers c ON co.customer_id = c.id
+                 JOIN customer_order_items coi ON co.id = coi.order_id
+                 JOIN menu_items mi ON coi.menu_id = mi.id
+        GROUP BY co.id, c.name, co.order_time, co.total_amount
+        ORDER BY co.order_time DESC;
+END;
+$$ LANGUAGE plpgsql;
