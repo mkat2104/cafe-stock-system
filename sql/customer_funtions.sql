@@ -23,30 +23,35 @@ $$ LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION customer_login(
-    p_login TEXT,
-    p_password TEXT
+    p_login TEXT,        -- phone or email
+    p_password TEXT      -- raw password input
 )
-RETURNS INT AS $$
+RETURNS TEXT AS $$
 DECLARE
     c_id INT;
     stored_hash TEXT;
+    c_name TEXT;
 BEGIN
-    SELECT id, password_hash
-    INTO c_id, stored_hash
+    -- 1. Look up customer by phone or email
+    SELECT id, password_hash, name
+    INTO c_id, stored_hash, c_name
     FROM customers
     WHERE phone = p_login OR email = p_login;
 
+    -- 2. No customer found
     IF NOT FOUND THEN
-        RETURN -1;  -- user not found
+        RETURN 'Error: No account found with that phone or email.';
     END IF;
 
+    -- 3. Check password validity
     IF stored_hash = crypt(p_password, stored_hash) THEN
-        RETURN c_id;  -- success
+        RETURN format('Welcome back, %s!', c_name);
     ELSE
-        RETURN -2;  -- wrong password
+        RETURN 'Error: Incorrect password.';
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
 
 
 
@@ -169,42 +174,3 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql;
-
-
-
-
-CREATE OR REPLACE FUNCTION calculate_order_total(
-    _order_id INT
-)
-RETURNS DECIMAL AS $$
-DECLARE
-    total DECIMAL(10,2);
-BEGIN
-    SELECT SUM(quantity * price_each)
-    INTO total
-    FROM customer_order_items
-    WHERE order_id = _order_id;
-
-    UPDATE customer_orders
-    SET total_amount = total
-    WHERE id = _order_id;
-
-    RETURN total;
-END;
-$$ LANGUAGE plpgsql;
-
-
-CREATE OR REPLACE FUNCTION complete_customer_order(
-    _order_id INT
-)
-RETURNS DECIMAL AS $$
-DECLARE
-    final_total DECIMAL(10,2);
-BEGIN
-    final_total := calculate_order_total(_order_id);
-    RETURN final_total;
-END;
-$$ LANGUAGE plpgsql;
-
-
-
